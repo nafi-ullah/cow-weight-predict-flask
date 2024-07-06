@@ -1,0 +1,4 @@
+Flask==3.0.3
+numpy==1.26.4
+requests==2.32.2
+ultralytics==8.2.50
