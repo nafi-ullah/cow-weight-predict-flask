@@ -1,9 +1,17 @@
 from flask import Flask, request, jsonify
 import numpy as np
 import pickle
+import requests
+import os
+import uuid
+import time
 from ultralytics import YOLO
 
 app = Flask(__name__)
+
+# Define the output directory for downloaded images
+output_directory = './output_images'
+os.makedirs(output_directory, exist_ok=True)
 
 # Load the trained YOLOv8 model
 model = YOLO('./best_seg_yolov8l.pt')
@@ -14,6 +22,14 @@ with open('./Pickle_RL_Model.pkl', 'rb') as file:
 
 # Dictionary to map gender
 gender_dict = {'F': 1, 'M': 0}
+
+def download_image(url, output_path):
+    response = requests.get(url)
+    if response.status_code == 200:
+        with open(output_path, 'wb') as f:
+            f.write(response.content)
+    else:
+        raise Exception(f"Failed to download image from {url}")
 
 def get_predictions(image_path, model):
     results = model(image_path)
@@ -63,10 +79,10 @@ def get_features(gender, side_image_path, rear_image_path):
     ]
     
     return features
+
 @app.route('/', methods=['GET'])
 def home():
     return "hello its nafi"
-
 
 @app.route('/predict_weight', methods=['POST'])
 def predict_weight():
@@ -80,14 +96,26 @@ def predict_weight():
         return jsonify({"error": "Missing data in request"}), 400
     
     try:
-        features = get_features(gender, side_image_link, rear_image_link)
+        # Generate unique filenames
+        timestamp = int(time.time())
+        unique_id = uuid.uuid4()
+        side_image_filename = f'side_image_{timestamp}_{unique_id}.jpg'
+        rear_image_filename = f'rear_image_{timestamp}_{unique_id}.jpg'
+        
+        side_image_path = os.path.join(output_directory, side_image_filename)
+        rear_image_path = os.path.join(output_directory, rear_image_filename)
+        
+        # Download the images
+        download_image(side_image_link, side_image_path)
+        download_image(rear_image_link, rear_image_path)
+        
+        # Get features and predict weight
+        features = get_features(gender, side_image_path, rear_image_path)
         weight_prediction = Pickled_LR_Model.predict([features])[0]
         
         return jsonify({"predicted_weight": weight_prediction})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# if __name__ == '__main__':
-#     app.run(debug=True)
 if __name__ == '__main__':
-    app.run(host='0.0.0.0',port=8080)
+    app.run(host='0.0.0.0', port=8080)
