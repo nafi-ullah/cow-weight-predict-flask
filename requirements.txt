@@ -1,7 +1,17 @@
-Flask==3.0.3
-numpy==1.26.4
-requests==2.32.2
+# Flask==3.0.3
+# numpy==1.26.4
+# requests==2.32.2
 # ultralytics==8.2.50
-gunicorn==22.0.0
-scikit-learn==1.4.2
+# gunicorn==22.0.0
+# scikit-learn==1.4.2
 
+
+
+fastapi
+uvicorn[standard]
+sqlalchemy
+pydantic
+numpy
+pickle-mixin
+requests==2.32.2
+ultralytics==8.2.50
