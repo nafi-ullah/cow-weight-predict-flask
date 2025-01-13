@@ -12,6 +12,8 @@ import requests
 import os
 import uuid
 import time
+from ultralytics import YOLO
+from io import BytesIO
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -252,12 +254,8 @@ def get_cattles_by_userid(userid: str, db: Session = Depends(get_db)):
 
 
 
-# Output directory for downloaded images
-output_directory = './output_images'
-os.makedirs(output_directory, exist_ok=True)
-
 # Load the trained YOLOv8 model
-from ultralytics import YOLO
+
 model = YOLO('./best_seg_yolov8l.pt')
 
 # Load the pickled linear regression model
@@ -268,17 +266,16 @@ with open('./Pickle_RL_Model.pkl', 'rb') as file:
 gender_dict = {'F': 1, 'M': 0}
 
 # Function to download image from URL
-def download_image(url, output_path):
+def download_image_as_bytesio(url):
     response = requests.get(url)
     if response.status_code == 200:
-        with open(output_path, 'wb') as f:
-            f.write(response.content)
+        return BytesIO(response.content)
     else:
         raise Exception(f"Failed to download image from {url}")
 
 # Function to get predictions from YOLO model
-def get_predictions(image_path, model):
-    results = model(image_path)
+def get_predictions(image_bytesio, model):
+    results = model(image_bytesio)
     return results
 
 # Function to calculate polygon area for segmentation
@@ -310,11 +307,11 @@ def find_area_from_predictions(results):
     return [area for class_id, area in class_areas.items()]
 
 # Function to extract features for prediction
-def get_features(gender, side_image_path, rear_image_path):
-    predictions = get_predictions(side_image_path, model)
+def get_features(gender, side_image_bytesio, rear_image_bytesio):
+    predictions = get_predictions(side_image_bytesio, model)
     side_area = find_area_from_predictions(predictions)
     
-    predictions = get_predictions(rear_image_path, model)
+    predictions = get_predictions(rear_image_bytesio, model)
     rear_area = find_area_from_predictions(predictions)
     
     features = [
@@ -342,21 +339,14 @@ def predict_weight(request: PredictRequest, db: Session = Depends(get_db)):
     try:
         gender = request.gender  # Replace with actual gender logic based on your use case
         
-        # Generate unique filenames for images
-        timestamp = int(time.time())
-        unique_id = uuid.uuid4()
-        side_image_filename = f'side_image_{timestamp}_{unique_id}.jpg'
-        rear_image_filename = f'rear_image_{timestamp}_{unique_id}.jpg'
+         # Download the images as BytesIO
+        side_image_bytesio = download_image_as_bytesio(request.cattle_side_url)
+        rear_image_bytesio = download_image_as_bytesio(request.cattle_rear_url)
         
-        side_image_path = os.path.join(output_directory, side_image_filename)
-        rear_image_path = os.path.join(output_directory, rear_image_filename)
-        
-        # Download the images
-        download_image(request.cattle_side_url, side_image_path)
-        download_image(request.cattle_rear_url, rear_image_path)
+
         
         # Get features and predict weight
-        features = get_features(gender, side_image_path, rear_image_path)
+        features = get_features(gender, side_image_bytesio, rear_image_bytesio)
         weight_prediction = Pickled_LR_Model.predict([features])[0]
 
         # Save to database (assuming you have weight_predict model set up)
@@ -377,3 +367,5 @@ def predict_weight(request: PredictRequest, db: Session = Depends(get_db)):
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+
